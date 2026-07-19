@@ -1,0 +1,6 @@
+{
+  "name": "Rutuja's Art Collection",
+  "description": "Premium handcrafted pipe cleaner flowers and beautiful garlands including hibiscus, marigold, and chafa.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
