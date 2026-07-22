@@ -27,6 +27,7 @@ export default function Navbar({
     { id: 'home', label: 'Home' },
     { id: 'catalog', label: 'Our Collection' },
     { id: 'custom', label: 'Custom Garlands' },
+    { id: 'tracking', label: 'Track Order' },
     { id: 'reviews', label: 'Customer Love' },
     { id: 'faq', label: 'FAQs' },
   ];

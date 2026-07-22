@@ -6,6 +6,7 @@ import Hero from './components/Hero';
 import ProductGrid from './components/ProductGrid';
 import ProductDetailModal from './components/ProductDetailModal';
 import Customizer from './components/Customizer';
+import OrderTracker from './components/OrderTracker';
 import CartDrawer from './components/CartDrawer';
 import Footer from './components/Footer';
 import { PRODUCTS } from './data';
@@ -33,6 +34,7 @@ export default function App() {
 
   // Track active section on scroll
   React.useEffect(() => {
+    if (activeSection === 'tracking') return;
     const handleScroll = () => {
       const sections = ['home', 'catalog', 'custom', 'reviews', 'faq'];
       const scrollPosition = window.scrollY + 160;
@@ -40,7 +42,7 @@ export default function App() {
       for (const sectionId of sections) {
         const el = document.getElementById(sectionId);
         if (el) {
-          const top = el.offsetTop;
+          const top = el.getBoundingClientRect().top + window.scrollY;
           const height = el.offsetHeight;
           if (scrollPosition >= top && scrollPosition < top + height) {
             setActiveSection(sectionId);
@@ -52,11 +54,11 @@ export default function App() {
 
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+  }, [activeSection]);
 
   const handleNavigate = (sectionId: string) => {
     setActiveSection(sectionId);
-    if (sectionId === 'home') {
+    if (sectionId === 'home' || sectionId === 'tracking') {
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
@@ -65,6 +67,17 @@ export default function App() {
       const yOffset = -80; // height of sticky header
       const y = element.getBoundingClientRect().top + window.scrollY + yOffset;
       window.scrollTo({ top: y, behavior: 'smooth' });
+    } else {
+      // If we are navigating from the tracking page to a section on the home page,
+      // wait a moment for the elements to mount and then scroll
+      setTimeout(() => {
+        const el = document.getElementById(sectionId);
+        if (el) {
+          const yOffset = -80;
+          const y = el.getBoundingClientRect().top + window.scrollY + yOffset;
+          window.scrollTo({ top: y, behavior: 'smooth' });
+        }
+      }, 100);
     }
   };
 
@@ -113,7 +126,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-stone-50/20 text-stone-800 selection:bg-rose-100 selection:text-rose-800 antialiased" id="home">
+    <div className="min-h-screen bg-stone-50/20 text-stone-800 selection:bg-rose-100 selection:text-rose-800 antialiased" id="app-root">
       
       {/* Promotion bar */}
       <div className="bg-gradient-to-r from-amber-500 via-rose-500 to-rose-600 text-white text-center py-2 px-4 text-xs font-semibold tracking-wider font-sans flex items-center justify-center gap-2">
@@ -136,51 +149,59 @@ export default function App() {
 
       {/* Content Sections */}
       <main>
-        {/* Hero Section */}
-        <Hero
-          onBrowseCatalog={handleBrowseCatalog}
-          onExploreCustom={handleExploreCustom}
-        />
-
-        {/* Handcrafted Process Spotlight strip */}
-        <section className="bg-stone-900 text-white py-12 sm:py-16">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-center md:text-left">
-              <div className="p-4 space-y-2">
-                <span className="text-rose-400 font-mono text-2xl font-bold">01.</span>
-                <h4 className="font-bold text-lg">Meticulous Twisting</h4>
-                <p className="text-stone-400 text-sm leading-relaxed font-sans">
-                  Each flower petal is sculpted individually with specialized soft chenille stems, creating plump, flexible, and symmetrical blossoms.
-                </p>
-              </div>
-              <div className="p-4 space-y-2">
-                <span className="text-amber-400 font-mono text-2xl font-bold">02.</span>
-                <h4 className="font-bold text-lg">Ribbon & Bead Detailing</h4>
-                <p className="text-stone-400 text-sm leading-relaxed font-sans">
-                  The garlands are strung using high-grade satin ribbons and golden beads, mirroring the rich elegance of fresh floral gendas and chafas.
-                </p>
-              </div>
-              <div className="p-4 space-y-2">
-                <span className="text-emerald-400 font-mono text-2xl font-bold">03.</span>
-                <h4 className="font-bold text-lg">Everlasting Fragrance-Ready</h4>
-                <p className="text-stone-400 text-sm leading-relaxed font-sans">
-                  Our pipe cleaner flowers don't dry up! You can optionally spray them with your favorite perfume or essential oils for custom scenting.
-                </p>
-              </div>
+        {activeSection === 'tracking' ? (
+          <OrderTracker onBackToShop={() => handleNavigate('home')} />
+        ) : (
+          <>
+            {/* Hero Section */}
+            <div id="home">
+              <Hero
+                onBrowseCatalog={handleBrowseCatalog}
+                onExploreCustom={handleExploreCustom}
+              />
             </div>
-          </div>
-        </section>
 
-        {/* Products Catalog Grid */}
-        <ProductGrid
-          products={PRODUCTS}
-          onAddToCart={(p) => handleAddToCart(p, 1)}
-          onViewProduct={(p) => setSelectedProduct(p)}
-          searchQuery={searchQuery}
-        />
+            {/* Handcrafted Process Spotlight strip */}
+            <section className="bg-stone-900 text-white py-12 sm:py-16">
+              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-center md:text-left">
+                  <div className="p-4 space-y-2">
+                    <span className="text-rose-400 font-mono text-2xl font-bold">01.</span>
+                    <h4 className="font-bold text-lg">Meticulous Twisting</h4>
+                    <p className="text-stone-400 text-sm leading-relaxed font-sans">
+                      Each flower petal is sculpted individually with specialized soft chenille stems, creating plump, flexible, and symmetrical blossoms.
+                    </p>
+                  </div>
+                  <div className="p-4 space-y-2">
+                    <span className="text-amber-400 font-mono text-2xl font-bold">02.</span>
+                    <h4 className="font-bold text-lg">Ribbon & Bead Detailing</h4>
+                    <p className="text-stone-400 text-sm leading-relaxed font-sans">
+                      The garlands are strung using high-grade satin ribbons and golden beads, mirroring the rich elegance of fresh floral gendas and chafas.
+                    </p>
+                  </div>
+                  <div className="p-4 space-y-2">
+                    <span className="text-emerald-400 font-mono text-2xl font-bold">03.</span>
+                    <h4 className="font-bold text-lg">Everlasting Fragrance-Ready</h4>
+                    <p className="text-stone-400 text-sm leading-relaxed font-sans">
+                      Our pipe cleaner flowers don't dry up! You can optionally spray them with your favorite perfume or essential oils for custom scenting.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </section>
 
-        {/* Customizer Workshop */}
-        <Customizer />
+            {/* Products Catalog Grid */}
+            <ProductGrid
+              products={PRODUCTS}
+              onAddToCart={(p) => handleAddToCart(p, 1)}
+              onViewProduct={(p) => setSelectedProduct(p)}
+              searchQuery={searchQuery}
+            />
+
+            {/* Customizer Workshop */}
+            <Customizer />
+          </>
+        )}
       </main>
 
       {/* Footer (includes verified reviews and FAQ) */}
