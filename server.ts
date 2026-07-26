@@ -35,6 +35,21 @@ async function startServer() {
     res.json({ status: 'ok', database: 'Cloud SQL (PostgreSQL)' });
   });
 
+  // In-memory backend email dispatch log audit trail
+  const emailDispatchLogs: Array<{
+    id: string;
+    timestamp: string;
+    email: string;
+    status: 'DELIVERED' | 'FAILED';
+    messageId?: string;
+    errorDetails?: string;
+  }> = [];
+
+  // API Endpoint: Check recent backend email logs
+  app.get('/api/auth/email-logs', (req, res) => {
+    res.json({ logs: emailDispatchLogs.slice(0, 50) });
+  });
+
   // Auth: Send Gmail Verification Email
   app.post('/api/auth/send-verification-email', async (req, res) => {
     try {
@@ -57,7 +72,7 @@ async function startServer() {
             <p style="margin: 0; font-family: monospace; font-size: 34px; font-weight: 800; letter-spacing: 8px; color: #e11d48;">${otpCode}</p>
           </div>
           <p style="font-size: 14px; color: #374151; line-height: 1.5;">Hello <strong>${cleanName}</strong>,</p>
-          <p style="font-size: 13px; color: #4b5563; line-height: 1.5;">Thank you for registering your business email with Rutuja's Art Collection. Please enter the verification code above in the checkout portal to verify your account and save your customized orders in the cloud database.</p>
+          <p style="font-size: 13px; color: #4b5563; line-height: 1.5;">Thank you for registering your email with Rutuja's Art Collection. Please enter the verification code above to verify your account and save your customized orders in the cloud database.</p>
           <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #f3f4f6; text-align: center;">
             <p style="font-size: 11px; color: #9ca3af; margin: 0;">Rutuja's Art Collection • Crafted with love in Pune, Maharashtra</p>
           </div>
@@ -113,21 +128,45 @@ async function startServer() {
           requestBody: { raw: rawMessage }
         });
 
-        console.log('✓ Verification email sent via Gmail API:', response.data.id);
-        return res.json({ success: true, messageId: response.data.id, emailSent: true });
+        console.log(`[EMAIL DISPATCH SUCCESS] OTP email delivered to ${cleanEmail}. Message ID: ${response.data.id}`);
+
+        emailDispatchLogs.unshift({
+          id: `log_${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          email: cleanEmail,
+          status: 'DELIVERED',
+          messageId: response.data.id
+        });
+
+        return res.json({
+          success: true,
+          emailSent: true,
+          messageId: response.data.id,
+          recipientEmail: cleanEmail
+        });
       } catch (gmailErr: any) {
-        console.warn('Gmail API notice (using fallback handler):', gmailErr?.message || gmailErr);
-        // Even if Gmail client is unconfigured or pending credentials in environment, return success so verification flow continues seamlessly
+        const errMsg = gmailErr?.message || String(gmailErr);
+        console.warn(`[EMAIL DISPATCH FAILURE] Could not send OTP email to ${cleanEmail}. Reason:`, errMsg);
+
+        emailDispatchLogs.unshift({
+          id: `log_${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          email: cleanEmail,
+          status: 'FAILED',
+          errorDetails: errMsg
+        });
+
         return res.json({
           success: true,
           emailSent: false,
-          notice: 'Verification code generated and ready in modal.',
-          otpCode
+          recipientEmail: cleanEmail,
+          errorDetails: errMsg,
+          notice: 'Gmail API not authenticated or credentials missing.'
         });
       }
     } catch (err: any) {
       console.error('Send verification email handler error:', err);
-      return res.status(500).json({ error: 'Failed to send verification email' });
+      return res.status(500).json({ error: 'Failed to process verification email dispatch' });
     }
   });
 

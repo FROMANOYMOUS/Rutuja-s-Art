@@ -12,15 +12,14 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   login: (email: string, pass: string) => Promise<{ success: boolean; error?: string; requireVerification?: boolean }>;
-  signup: (email: string, pass: string, name: string, phone?: string, address?: string) => Promise<{ success: boolean; error?: string; otpCode?: string; emailSent?: boolean }>;
+  signup: (email: string, pass: string, name: string, phone?: string, address?: string) => Promise<{ success: boolean; error?: string; emailSent?: boolean }>;
   verifyOtp: (email: string, code: string, pendingUserData?: Partial<User>) => Promise<{ success: boolean; error?: string }>;
-  resendOtp: (email: string) => Promise<{ success: boolean; otpCode: string; emailSent?: boolean }>;
-  requestPasswordReset: (email: string) => Promise<{ success: boolean; error?: string; otpCode?: string; emailSent?: boolean }>;
+  resendOtp: (email: string) => Promise<{ success: boolean; emailSent?: boolean }>;
+  requestPasswordReset: (email: string) => Promise<{ success: boolean; error?: string; emailSent?: boolean }>;
   confirmPasswordReset: (email: string, code: string, newPassword: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   updateProfile: (data: { name: string; phone: string; address: string }) => Promise<void>;
   syncCartToCloud: (cartItems: CartItem[]) => Promise<void>;
-  getPendingOtp: (email: string) => string | undefined;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -107,7 +106,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     setLoading(false);
-    return { success: true, otpCode: code };
+    return { success: true };
   };
 
   // Verify OTP Code
@@ -116,10 +115,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const cleanEmail = email.trim().toLowerCase();
     const pending = pendingOtps[cleanEmail];
 
-    // Check code match (or universal demo code 123456)
-    if (!pending || (pending.code !== code.trim() && code.trim() !== '123456')) {
+    // Check code match
+    if (!pending || pending.code !== code.trim()) {
       setLoading(false);
-      return { success: false, error: 'Invalid verification code. Please check your email or use 123456.' };
+      return { success: false, error: 'Invalid verification code. Please check your email.' };
     }
 
     const userData = pending.userData || {};
@@ -209,7 +208,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.warn('Resend email notice:', e);
     }
 
-    return { success: true, otpCode: newCode };
+    return { success: true };
   };
 
   // Request Password Reset OTP via Email
@@ -247,9 +246,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const cleanEmail = email.trim().toLowerCase();
     const pending = pendingOtps[cleanEmail];
 
-    if (!pending || (pending.code !== code.trim() && code.trim() !== '123456')) {
+    if (!pending || pending.code !== code.trim()) {
       setLoading(false);
-      return { success: false, error: 'Invalid verification code. Please check your email or use 123456.' };
+      return { success: false, error: 'Invalid verification code. Please check your email.' };
     }
 
     // 1. Update password in Express API / Cloud SQL
@@ -430,11 +429,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const getPendingOtp = (email: string) => {
-    const clean = email.trim().toLowerCase();
-    return pendingOtps[clean]?.code;
-  };
-
   return (
     <AuthContext.Provider value={{
       user,
@@ -447,8 +441,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       confirmPasswordReset,
       logout,
       updateProfile,
-      syncCartToCloud,
-      getPendingOtp
+      syncCartToCloud
     }}>
       {children}
     </AuthContext.Provider>
