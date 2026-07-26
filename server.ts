@@ -65,10 +65,42 @@ async function startServer() {
       `;
 
       try {
-        const auth = new google.auth.GoogleAuth({
-          scopes: ['https://www.googleapis.com/auth/gmail.send']
-        });
-        const gmail = google.gmail({ version: 'v1', auth });
+        let authClient: any;
+        const clientId = process.env.GMAIL_CLIENT_ID;
+        const clientSecret = process.env.GMAIL_CLIENT_SECRET;
+        const refreshToken = process.env.GMAIL_REFRESH_TOKEN;
+        const saJson = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
+
+        if (clientId && clientSecret && refreshToken) {
+          const oauth2Client = new google.auth.OAuth2(
+            clientId,
+            clientSecret,
+            process.env.GMAIL_REDIRECT_URI || 'https://developers.google.com/oauthplayground'
+          );
+          oauth2Client.setCredentials({ refresh_token: refreshToken });
+          authClient = oauth2Client;
+        } else if (saJson) {
+          try {
+            const credentials = JSON.parse(
+              saJson.startsWith('{') ? saJson : Buffer.from(saJson, 'base64').toString('utf-8')
+            );
+            authClient = new google.auth.GoogleAuth({
+              credentials,
+              scopes: ['https://www.googleapis.com/auth/gmail.send']
+            });
+          } catch (e) {
+            console.warn('Failed to parse GOOGLE_APPLICATION_CREDENTIALS_JSON, falling back to GoogleAuth ADC');
+            authClient = new google.auth.GoogleAuth({
+              scopes: ['https://www.googleapis.com/auth/gmail.send']
+            });
+          }
+        } else {
+          authClient = new google.auth.GoogleAuth({
+            scopes: ['https://www.googleapis.com/auth/gmail.send']
+          });
+        }
+
+        const gmail = google.gmail({ version: 'v1', auth: authClient });
 
         const rawMessage = makeRawEmail(
           cleanEmail,
