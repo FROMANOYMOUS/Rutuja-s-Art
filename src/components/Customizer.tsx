@@ -1,8 +1,15 @@
 import React from 'react';
-import { Send, Sparkles, CheckCircle, Info, RefreshCw, Flower } from 'lucide-react';
+import { Send, Sparkles, CheckCircle, Info, RefreshCw, Flower, Lock } from 'lucide-react';
 import { motion } from 'motion/react';
+import { useAuth } from '../context/AuthContext';
 
-export default function Customizer() {
+interface CustomizerProps {
+  onOpenAuthModal?: (reasonMsg?: string) => void;
+}
+
+export default function Customizer({ onOpenAuthModal }: CustomizerProps) {
+  const { user } = useAuth();
+
   const [flowerType, setFlowerType] = React.useState<'hibiscus' | 'marigold' | 'chafa' | 'mixed'>('hibiscus');
   const [size, setSize] = React.useState<'5' | '7' | '11' | 'custom'>('7');
   const [customLength, setCustomLength] = React.useState('4');
@@ -14,9 +21,15 @@ export default function Customizer() {
   });
   const [colorTheme, setColorTheme] = React.useState('Standard Vibrant Red');
   const [specialNotes, setSpecialNotes] = React.useState('');
-  const [customerName, setCustomerName] = React.useState('');
+  const [customerName, setCustomerName] = React.useState(user?.name || '');
   const [inquirySent, setInquirySent] = React.useState(false);
   const [breezeActive, setBreezeActive] = React.useState(false);
+
+  React.useEffect(() => {
+    if (user?.name && !customerName) {
+      setCustomerName(user.name);
+    }
+  }, [user]);
 
   const triggerBreeze = () => {
     if (breezeActive) return;
@@ -54,12 +67,24 @@ export default function Customizer() {
 
   const estPrice = calculateEstimatedPrice();
 
-  const handleSendCustomInquiry = (e: React.FormEvent) => {
+  const handleSendCustomInquiry = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!user) {
+      if (onOpenAuthModal) {
+        onOpenAuthModal('🔒 Account Required: Please sign in or create an account with your email to submit custom garland orders.');
+      }
+      return;
+    }
+
     if (!customerName.trim()) {
       alert("Please enter your name so Rutuja can address you!");
       return;
     }
+
+    const randomNum = Math.floor(10000 + Math.random() * 90000);
+    const uniqueId = `RA-CUSTOM-${randomNum}`;
+    const todayStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 
     const sizeText = size === 'custom' 
       ? `Custom (${customLength} feet, ${customCount} flowers)` 
@@ -70,9 +95,55 @@ export default function Customizer() {
     if (accents.leaves) accentList.push("Green Leaf Clusters");
     if (accents.beads) accentList.push("Golden Beads");
 
+    const customOrderRecord = {
+      orderId: uniqueId,
+      customerName: customerName.trim(),
+      customerEmail: `${customerName.trim().toLowerCase().replace(/\s+/g, '.')}@gmail.com`,
+      customerPhone: '+91 98765 43210',
+      orderDate: todayStr,
+      estimatedDelivery: 'Custom Timeline',
+      status: 'ordered',
+      courier: 'Express Delivery',
+      trackingNo: `RA-CUST-${randomNum}`,
+      address: 'Custom Order Request via WhatsApp',
+      paymentMode: 'Prepaid (Custom Quote)',
+      paymentType: 'UPI',
+      paymentStatus: 'Awaiting Quote',
+      items: [
+        {
+          name: `Bespoke Garland (${flowerType.toUpperCase()} - ${sizeText})`,
+          quantity: 1,
+          price: estPrice,
+        }
+      ],
+      notes: `Theme: ${colorTheme}. Addons: ${accentList.join(', ')}. Details: ${specialNotes}`
+    };
+
+    // Save locally to CRM store
+    try {
+      const stored = localStorage.getItem('rutujas_crm_orders');
+      const list = stored ? JSON.parse(stored) : [];
+      list.unshift(customOrderRecord);
+      localStorage.setItem('rutujas_crm_orders', JSON.stringify(list));
+    } catch (err) {
+      console.warn('LocalStorage error:', err);
+    }
+
+    // Save to API
+    try {
+      await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(customOrderRecord),
+      });
+    } catch (err) {
+      console.warn('API error:', err);
+    }
+
     const text = `Hi Rutuja! I want to inquire about a *Custom Handcrafted Garland* from Rutuja's Art Collection:
 
-👤 Customer Name: *${customerName}*
+🆔 *Custom Order Request ID:* *#${uniqueId}*
+👤 Customer Name: *${customerName.trim()}*
 🌸 Base Flower: *${flowerType.toUpperCase()}*
 🎨 Color Theme: *${colorTheme}*
 📏 Size/Flower Count: *${sizeText}*
@@ -86,7 +157,6 @@ Please let me know if you can take this custom order and what the timeline would
     window.open(`https://wa.me/?text=${encodedText}`, '_blank');
     setInquirySent(true);
 
-    // Reset indicator after some time
     setTimeout(() => {
       setInquirySent(false);
     }, 6000);

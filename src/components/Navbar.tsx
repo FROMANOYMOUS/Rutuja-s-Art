@@ -1,7 +1,8 @@
 import React from 'react';
-import { ShoppingBag, Flower, Search, Menu, X } from 'lucide-react';
+import { ShoppingBag, Flower, Search, Menu, X, User as UserIcon, LogIn } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CartItem } from '../types';
+import { useAuth } from '../context/AuthContext';
 
 interface NavbarProps {
   cart: CartItem[];
@@ -10,6 +11,8 @@ interface NavbarProps {
   onSearchChange: (query: string) => void;
   activeSection: string;
   onNavigate: (sectionId: string) => void;
+  onOpenAuthModal?: () => void;
+  onOpenProfileModal?: () => void;
 }
 
 export default function Navbar({
@@ -19,8 +22,11 @@ export default function Navbar({
   onSearchChange,
   activeSection,
   onNavigate,
+  onOpenAuthModal,
+  onOpenProfileModal,
 }: NavbarProps) {
   const [isOpen, setIsOpen] = React.useState(false);
+  const { user } = useAuth();
   const totalItems = cart.reduce((acc, item) => acc + item.quantity, 0);
 
   const navLinks = [
@@ -56,19 +62,19 @@ export default function Navbar({
           </div>
 
           {/* Desktop Navigation Links */}
-          <div className="hidden lg:flex items-center gap-8">
+          <div className="hidden lg:flex items-center gap-6 xl:gap-8">
             {navLinks.map((link) => (
               <button
                 key={link.id}
                 onClick={() => onNavigate(link.id)}
-                className={`font-sans text-[15px] font-medium transition-colors relative py-2 cursor-pointer ${
+                className={`font-sans text-[14px] xl:text-[15px] font-medium transition-colors relative py-2 cursor-pointer flex items-center gap-1.5 ${
                   activeSection === link.id
-                    ? 'text-rose-600'
+                    ? 'text-rose-600 font-bold'
                     : 'text-stone-600 hover:text-stone-900'
                 }`}
                 id={`nav-link-${link.id}`}
               >
-                {link.label}
+                <span>{link.label}</span>
                 {activeSection === link.id && (
                   <motion.div
                     layoutId="activeUnderline"
@@ -80,19 +86,43 @@ export default function Navbar({
             ))}
           </div>
 
-          {/* Search Bar & Cart Icons */}
-          <div className="hidden md:flex items-center gap-4">
+          {/* Search Bar, User Profile & Cart Icons */}
+          <div className="hidden md:flex items-center gap-3">
             <div className="relative">
               <input
                 type="text"
                 placeholder="Search flowers..."
                 value={searchQuery}
                 onChange={(e) => onSearchChange(e.target.value)}
-                className="w-48 xl:w-64 bg-orange-100/50 hover:bg-orange-100/80 focus:bg-white text-stone-800 text-sm pl-10 pr-4 py-2 rounded-full border border-orange-200/50 focus:border-rose-300 focus:outline-none transition-all duration-300"
+                className="w-40 xl:w-56 bg-orange-100/50 hover:bg-orange-100/80 focus:bg-white text-stone-800 text-sm pl-10 pr-4 py-2 rounded-full border border-orange-200/50 focus:border-rose-300 focus:outline-none transition-all duration-300"
                 id="search-input-desktop"
               />
               <Search className="absolute left-3.5 top-2.5 w-4.5 h-4.5 text-stone-400" />
             </div>
+
+            {/* Auth / Account Profile Button */}
+            {user ? (
+              <button
+                onClick={onOpenProfileModal}
+                className="flex items-center gap-2 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-800 rounded-full border border-rose-200/60 transition-all cursor-pointer text-xs font-semibold font-sans"
+                id="nav-user-profile-btn"
+                title="View Saved Account & Orders"
+              >
+                <div className="w-6 h-6 bg-rose-600 text-white rounded-full flex items-center justify-center font-bold text-[11px] shrink-0">
+                  {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
+                </div>
+                <span className="max-w-[90px] truncate">{user.name.split(' ')[0]}</span>
+              </button>
+            ) : (
+              <button
+                onClick={onOpenAuthModal}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-stone-800 hover:bg-stone-900 text-white rounded-full transition-all cursor-pointer text-xs font-semibold font-sans shadow-xs"
+                id="nav-login-btn"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>Sign In</span>
+              </button>
+            )}
 
             <button
               onClick={onOpenCart}
@@ -117,7 +147,27 @@ export default function Navbar({
           </div>
 
           {/* Mobile Buttons */}
-          <div className="flex lg:hidden items-center gap-3">
+          <div className="flex lg:hidden items-center gap-2">
+            {/* Mobile Auth Button */}
+            {user ? (
+              <button
+                onClick={onOpenProfileModal}
+                className="w-8 h-8 bg-rose-600 text-white rounded-full flex items-center justify-center font-bold text-xs cursor-pointer"
+                id="nav-user-profile-btn-mobile"
+              >
+                {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
+              </button>
+            ) : (
+              <button
+                onClick={onOpenAuthModal}
+                className="p-2 text-stone-700 hover:text-rose-600 font-sans text-xs font-bold flex items-center gap-1"
+                id="nav-login-btn-mobile"
+              >
+                <LogIn className="w-4 h-4 text-rose-600" />
+                <span>Login</span>
+              </button>
+            )}
+
             <button
               onClick={onOpenCart}
               className="relative p-2 bg-rose-50 hover:bg-rose-100 rounded-full text-rose-600 cursor-pointer"

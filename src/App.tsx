@@ -8,11 +8,15 @@ import ProductDetailModal from './components/ProductDetailModal';
 import Customizer from './components/Customizer';
 import OrderTracker from './components/OrderTracker';
 import CartDrawer from './components/CartDrawer';
+import AuthModal from './components/AuthModal';
+import UserProfileModal from './components/UserProfileModal';
 import Footer from './components/Footer';
 import { PRODUCTS } from './data';
 import { Product, CartItem } from './types';
+import { AuthProvider, useAuth } from './context/AuthContext';
 
-export default function App() {
+function AppContent() {
+  const { user } = useAuth();
   const [cart, setCart] = React.useState<CartItem[]>(() => {
     try {
       const saved = localStorage.getItem('rutujas_art_cart');
@@ -24,13 +28,37 @@ export default function App() {
   
   const [selectedProduct, setSelectedProduct] = React.useState<Product | null>(null);
   const [cartOpen, setCartOpen] = React.useState(false);
+  const [authModalOpen, setAuthModalOpen] = React.useState(false);
+  const [profileModalOpen, setProfileModalOpen] = React.useState(false);
+  const [authReason, setAuthReason] = React.useState('');
   const [searchQuery, setSearchQuery] = React.useState('');
   const [activeSection, setActiveSection] = React.useState('home');
+
+  // Load user's cloud cart when user logs in
+  React.useEffect(() => {
+    if (user && user.cart && Array.isArray(user.cart) && user.cart.length > 0) {
+      setCart((prevCart) => {
+        // Merge or set user cart
+        if (prevCart.length === 0) return user.cart!;
+        return prevCart;
+      });
+    }
+  }, [user]);
 
   // Sync cart to localStorage
   React.useEffect(() => {
     localStorage.setItem('rutujas_art_cart', JSON.stringify(cart));
   }, [cart]);
+
+  // Open Auth modal with reason
+  const handleOpenAuthModal = (reasonMessage?: string) => {
+    if (reasonMessage) {
+      setAuthReason(reasonMessage);
+    } else {
+      setAuthReason('');
+    }
+    setAuthModalOpen(true);
+  };
 
   // Track active section on scroll
   React.useEffect(() => {
@@ -68,8 +96,6 @@ export default function App() {
       const y = element.getBoundingClientRect().top + window.scrollY + yOffset;
       window.scrollTo({ top: y, behavior: 'smooth' });
     } else {
-      // If we are navigating from the tracking page to a section on the home page,
-      // wait a moment for the elements to mount and then scroll
       setTimeout(() => {
         const el = document.getElementById(sectionId);
         if (el) {
@@ -131,7 +157,7 @@ export default function App() {
       {/* Promotion bar */}
       <div className="bg-gradient-to-r from-amber-500 via-rose-500 to-rose-600 text-white text-center py-2 px-4 text-xs font-semibold tracking-wider font-sans flex items-center justify-center gap-2">
         <Sparkles className="w-3.5 h-3.5 animate-pulse" />
-        <span>Festive Special: 10% Off on orders above ₹1,999! Each piece custom-crafted with premium soft pipe cleaners.</span>
+        <span>Festive Special: 10% Off on orders above ₹1,999! Create an account to save your cart on cloud.</span>
       </div>
 
       {/* Main sticky navigation header */}
@@ -145,6 +171,8 @@ export default function App() {
         }}
         activeSection={activeSection}
         onNavigate={handleNavigate}
+        onOpenAuthModal={() => handleOpenAuthModal()}
+        onOpenProfileModal={() => setProfileModalOpen(true)}
       />
 
       {/* Content Sections */}
@@ -199,7 +227,7 @@ export default function App() {
             />
 
             {/* Customizer Workshop */}
-            <Customizer />
+            <Customizer onOpenAuthModal={handleOpenAuthModal} />
           </>
         )}
       </main>
@@ -226,7 +254,32 @@ export default function App() {
         onUpdateQuantity={handleUpdateQuantity}
         onRemoveItem={handleRemoveItem}
         onClearCart={handleClearCart}
+        onOpenAuthModal={handleOpenAuthModal}
+      />
+
+      {/* Authentication Modal */}
+      <AuthModal
+        isOpen={authModalOpen}
+        onClose={() => setAuthModalOpen(false)}
+        reasonMessage={authReason}
+      />
+
+      {/* Customer Profile & Orders Modal */}
+      <UserProfileModal
+        isOpen={profileModalOpen}
+        onClose={() => setProfileModalOpen(false)}
+        onNavigateToTracker={(orderId) => {
+          handleNavigate('tracking');
+        }}
       />
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }

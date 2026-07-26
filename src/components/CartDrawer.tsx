@@ -1,7 +1,9 @@
 import React from 'react';
-import { X, Trash2, ShoppingCart, MessageCircle, Send, Sparkles, CheckCircle2 } from 'lucide-react';
+import { X, Trash2, ShoppingCart, MessageCircle, Send, Sparkles, CheckCircle2, Lock, UserCheck, CloudCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CartItem, Product } from '../types';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
 
 interface CartDrawerProps {
   isOpen: boolean;
@@ -10,6 +12,7 @@ interface CartDrawerProps {
   onUpdateQuantity: (productId: string, quantity: number) => void;
   onRemoveItem: (productId: string) => void;
   onClearCart: () => void;
+  onOpenAuthModal?: (reasonMessage?: string) => void;
 }
 
 export default function CartDrawer({
@@ -19,22 +22,146 @@ export default function CartDrawer({
   onUpdateQuantity,
   onRemoveItem,
   onClearCart,
+  onOpenAuthModal,
 }: CartDrawerProps) {
+  const { user, syncCartToCloud } = useAuth();
+
   const [customerName, setCustomerName] = React.useState('');
   const [phone, setPhone] = React.useState('');
+  const [email, setEmail] = React.useState('');
   const [address, setAddress] = React.useState('');
   const [notes, setNotes] = React.useState('');
   const [isCheckingOut, setIsCheckingOut] = React.useState(false);
   const [orderCompleted, setOrderCompleted] = React.useState(false);
+  const [createdOrderId, setCreatedOrderId] = React.useState<string>('');
+
+  // Auto-fill customer details from user account
+  React.useEffect(() => {
+    if (user) {
+      if (user.name && !customerName) setCustomerName(user.name);
+      if (user.email && !email) setEmail(user.email);
+      if (user.phone && !phone) setPhone(user.phone);
+      if (user.address && !address) setAddress(user.address);
+    }
+  }, [user]);
+
+  // Sync cart to cloud whenever cart items change
+  React.useEffect(() => {
+    if (user && cart.length >= 0) {
+      syncCartToCloud(cart);
+    }
+  }, [user, cart]);
 
   const subtotal = cart.reduce((acc, item) => acc + item.product.price * item.quantity, 0);
 
-  const handleWhatsAppCheckout = (e: React.FormEvent) => {
+  // Helper function to create and persist order in DB & Supabase
+  const createOrderRecord = async (overrideOrderId?: string) => {
+    const randomNum = Math.floor(10000 + Math.random() * 90000);
+    const uniqueId = overrideOrderId || `RA-${randomNum}`;
+    const todayStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+
+    const itemsFormatted = cart.map((i) => ({
+      name: i.product.name,
+      quantity: i.quantity,
+      price: i.product.price,
+    }));
+
+    const newOrderPayload = {
+      orderId: uniqueId,
+      customerName: customerName.trim(),
+      customerEmail: email.trim() || `${customerName.trim().toLowerCase().replace(/\s+/g, '.')}@gmail.com`,
+      customerPhone: phone.trim(),
+      orderDate: todayStr,
+      estimatedDelivery: 'July 30, 2026',
+      status: 'ordered',
+      courier: 'Delhivery Express',
+      trackingNo: `RA${Math.floor(10000 + Math.random() * 90000)}IN`,
+      address: address.trim(),
+      paymentMode: 'Prepaid (WhatsApp / UPI)',
+      paymentType: 'UPI / Google Pay (GPay)',
+      paymentStatus: 'Pending Confirmation',
+      items: itemsFormatted,
+      notes: notes.trim() || undefined,
+      milestones: [
+        { status: 'ordered', title: 'Order Placed via WhatsApp', description: 'Order inquiry received & logged in database.', date: `${todayStr}, Just now`, isCompleted: true, isActive: true },
+        { status: 'crafting', title: 'Crafting Queue', description: 'Awaiting WhatsApp confirmation from Rutuja.', date: 'Pending', isCompleted: false, isActive: false },
+        { status: 'packed', title: 'Eco Packaging', description: 'Protective wrap ready.', date: 'Pending', isCompleted: false, isActive: false },
+        { status: 'shipped', title: 'Logistics Courier', description: 'AWB assignment pending.', date: 'Pending', isCompleted: false, isActive: false },
+        { status: 'delivered', title: 'Delivery', description: 'Handed over to recipient.', date: 'Pending', isCompleted: false, isActive: false },
+      ]
+    };
+
+    // 1. Post to Express Server (/api/orders)
+    try {
+      await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newOrderPayload),
+      });
+    } catch (err) {
+      console.warn('Backend endpoint error, falling back to client state:', err);
+    }
+
+    // 2. Post directly to Supabase if configured
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('orders').insert([{
+          order_id: uniqueId,
+          customer_name: customerName.trim(),
+          customer_email: newOrderPayload.customerEmail,
+          customer_phone: phone.trim(),
+          order_date: todayStr,
+          estimated_delivery: 'July 30, 2026',
+          status: 'ordered',
+          courier: 'Delhivery Express',
+          tracking_no: newOrderPayload.trackingNo,
+          address: address.trim(),
+          payment_mode: 'Prepaid',
+          payment_type: 'UPI / Google Pay',
+          payment_status: 'Pending Confirmation'
+        }]);
+      } catch (sErr) {
+        console.warn('Supabase insert error:', sErr);
+      }
+    }
+
+    // 3. Save to LocalStorage CRM store for instant cross-tab access
+    try {
+      const existingStored = localStorage.getItem('rutujas_crm_orders');
+      const ordersList = existingStored ? JSON.parse(existingStored) : [];
+      ordersList.unshift({
+        ...newOrderPayload,
+        totalAmount: subtotal,
+        createdAt: new Date().toISOString()
+      });
+      localStorage.setItem('rutujas_crm_orders', JSON.stringify(ordersList));
+    } catch (lErr) {
+      console.warn('LocalStorage CRM write error:', lErr);
+    }
+
+    return uniqueId;
+  };
+
+  const handleWhatsAppCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Enforce Login Requirement
+    if (!user) {
+      if (onOpenAuthModal) {
+        onOpenAuthModal('🔒 Login Required: Please sign in or create an account with your email to place your order and save your cart on the cloud.');
+      }
+      return;
+    }
+
     if (!customerName.trim() || !phone.trim() || !address.trim()) {
       alert("Please complete Name, Phone, and Delivery Address to place order.");
       return;
     }
+
+    setIsCheckingOut(true);
+
+    const generatedId = await createOrderRecord();
+    setCreatedOrderId(generatedId);
 
     const itemsText = cart
       .map(
@@ -47,42 +174,55 @@ export default function CartDrawer({
 
     const text = `Hi Rutuja! I would like to place an order from Rutuja's Art Collection:
 
-🛍️ *ORDER DETAILS* 🛍️
+🛍️ *ORDER DETAILS*
+🆔 *Unique Order ID:* *#${generatedId}*
 ${itemsText}
 
 💰 *TOTAL AMOUNT:* *₹${subtotal}*
 
 👤 *CUSTOMER INFO*
-• Name: *${customerName}*
-• Phone: *${phone}*
-• Delivery Address: *${address}*
-• Delivery Note/Msg: _${notes ? notes : 'None'}_
+• Name: *${customerName.trim()}*
+• Email: *${user.email}*
+• Phone: *${phone.trim()}*
+• Delivery Address: *${address.trim()}*
+• Delivery Note/Msg: _${notes.trim() ? notes.trim() : 'None'}_
 
-Please let me know the payment details and shipping timeline. Thank you!`;
+⚡ *Status:* Logged in Database (#${generatedId})
+Please review on your WhatsApp CRM and reply to confirm my order! Thank you!`;
 
     const encodedText = encodeURIComponent(text);
     window.open(`https://wa.me/?text=${encodedText}`, '_blank');
-    
-    // Complete the transaction locally
-    setIsCheckingOut(true);
+
     setTimeout(() => {
       setOrderCompleted(true);
       setIsCheckingOut(false);
-    }, 1000);
+    }, 800);
   };
 
-  const handleLocalSubmitCheckout = (e: React.FormEvent) => {
+  const handleLocalSubmitCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Enforce Login Requirement
+    if (!user) {
+      if (onOpenAuthModal) {
+        onOpenAuthModal('🔒 Login Required: Please sign in or create an account with your email to place your order and save your cart on the cloud.');
+      }
+      return;
+    }
+
     if (!customerName.trim() || !phone.trim() || !address.trim()) {
       alert("Please complete Name, Phone, and Delivery Address to place order.");
       return;
     }
 
     setIsCheckingOut(true);
+    const generatedId = await createOrderRecord();
+    setCreatedOrderId(generatedId);
+
     setTimeout(() => {
       setOrderCompleted(true);
       setIsCheckingOut(false);
-    }, 1200);
+    }, 1000);
   };
 
   const handleCloseSuccessModal = () => {
@@ -240,9 +380,47 @@ Please let me know the payment details and shipping timeline. Thank you!`;
 
                     {/* Quick Checkout Form details */}
                     <div className="border-t border-stone-100 pt-5 space-y-4">
-                      <p className="text-xs font-bold font-mono text-rose-600 uppercase tracking-widest flex items-center gap-1">
+                      {/* Account Status / Login Banner */}
+                      {user ? (
+                        <div className="p-3 bg-rose-50/80 border border-rose-200/80 rounded-2xl flex items-center justify-between gap-2 text-xs font-sans text-rose-900">
+                          <div className="flex items-center gap-2">
+                            <UserCheck className="w-4 h-4 text-rose-600 shrink-0" />
+                            <div>
+                              <p className="font-bold">Logged in as {user.name}</p>
+                              <p className="text-[11px] text-rose-700/80 flex items-center gap-1 font-mono">
+                                <CloudCheck className="w-3 h-3 text-emerald-600" /> Cart & details synced to cloud
+                              </p>
+                            </div>
+                          </div>
+                          <span className="text-[10px] font-mono bg-rose-200/60 px-2 py-0.5 rounded text-rose-900 font-bold">Verified</span>
+                        </div>
+                      ) : (
+                        <div className="p-3.5 bg-amber-50 border border-amber-200/80 rounded-2xl flex flex-col gap-2 text-xs font-sans text-amber-900">
+                          <div className="flex items-start gap-2">
+                            <Lock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                            <div>
+                              <p className="font-bold">Login Required to Place Order</p>
+                              <p className="text-[11px] text-amber-800 leading-snug">
+                                You must sign in or create an account with your email so your cart and order history are saved safely on the cloud.
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => {
+                              if (onOpenAuthModal) {
+                                onOpenAuthModal('🔒 Please log in or create an account with your email to place your order.');
+                              }
+                            }}
+                            className="mt-1 py-1.5 px-3 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer self-start flex items-center gap-1 shadow-xs"
+                          >
+                            <span>Sign In / Create Account</span>
+                          </button>
+                        </div>
+                      )}
+
+                      <p className="text-xs font-bold font-mono text-rose-600 uppercase tracking-widest flex items-center gap-1 pt-1">
                         <Sparkles className="w-3.5 h-3.5" />
-                        <span>Instant Checkout Form</span>
+                        <span>Instant Delivery Details</span>
                       </p>
 
                       <div className="space-y-3 font-sans text-stone-700">
@@ -336,15 +514,23 @@ Please let me know the payment details and shipping timeline. Thank you!`;
               <CheckCircle2 className="w-9 h-9 text-emerald-500 animate-pulse" />
             </div>
 
-            <span className="text-[10px] font-mono font-bold text-orange-600 uppercase tracking-widest block mb-1">Order Request Sent!</span>
+            <span className="text-[10px] font-mono font-bold text-orange-600 uppercase tracking-widest block mb-1">Order Request Logged & Sent!</span>
             <h3 className="font-sans font-bold text-2xl text-stone-800">Thank you, {customerName}!</h3>
-            <p className="font-sans text-stone-500 text-sm mt-3 leading-relaxed">
-              Your inquiry for the handcrafted pipe cleaner products has been received. Rutuja will review the requested specifications and contact you on <span className="font-semibold text-stone-800 font-mono">{phone}</span> within 12-24 hours via phone/WhatsApp to confirm payment and shipping.
+            
+            {createdOrderId && (
+              <div className="my-3 py-2 px-3 bg-emerald-50 border border-emerald-200 rounded-xl inline-flex items-center gap-2 text-xs font-mono font-bold text-emerald-800">
+                <span>Unique Order ID:</span>
+                <span className="bg-emerald-600 text-white px-2 py-0.5 rounded text-sm">#{createdOrderId}</span>
+              </div>
+            )}
+
+            <p className="font-sans text-stone-500 text-sm mt-2 leading-relaxed">
+              Your order request has been received under Order ID <strong className="text-stone-800">#{createdOrderId}</strong>. We will confirm your order details and shipping timeline shortly.
             </p>
 
             <div className="my-5 p-4 bg-orange-50/50 rounded-2xl border border-orange-100/40 text-left space-y-2 text-xs font-sans text-stone-600">
               <p className="font-bold text-stone-700 text-sm border-b border-orange-100 pb-1.5 flex items-center gap-1.5">
-                <Sparkles className="w-4 h-4 text-amber-500" /> Order Summary
+                <Sparkles className="w-4 h-4 text-amber-500" /> Order Summary (# {createdOrderId})
               </p>
               <div className="flex justify-between">
                 <span>Requested Items:</span>
