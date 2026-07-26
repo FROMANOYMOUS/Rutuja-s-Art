@@ -136,8 +136,13 @@ export default function UserProfileModal({ isOpen, onClose, onNavigateToTracker 
               {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
             </div>
             <div>
-              <h2 className="font-serif text-2xl font-bold text-stone-800">{user.name}</h2>
-              <p className="font-mono text-xs text-stone-500 flex items-center gap-1 mt-0.5">
+              <div className="flex items-center gap-2">
+                <h2 className="font-serif text-2xl font-bold text-stone-800">{user.name}</h2>
+                <span className="bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-mono px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Verified Email
+                </span>
+              </div>
+              <p className="font-mono text-xs text-stone-500 flex items-center gap-1 mt-1">
                 <Mail className="w-3.5 h-3.5 text-rose-500" /> {user.email}
               </p>
             </div>

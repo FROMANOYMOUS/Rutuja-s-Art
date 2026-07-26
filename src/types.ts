@@ -37,6 +37,8 @@ export interface User {
   name: string;
   phone?: string;
   address?: string;
+  verified?: boolean;
+  cart?: CartItem[];
   createdAt?: string;
 }
 
