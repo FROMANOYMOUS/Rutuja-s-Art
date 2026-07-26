@@ -36,6 +36,7 @@ export default function AuthModal({ isOpen, onClose, reasonMessage, onSuccess }:
     resendOtp,
     requestPasswordReset,
     confirmPasswordReset,
+    getPendingOtp,
     loading
   } = useAuth();
 
@@ -463,72 +464,103 @@ export default function AuthModal({ isOpen, onClose, reasonMessage, onSuccess }:
           )}
 
           {/* ----------------- MODE: VERIFY EMAIL OTP ----------------- */}
-          {mode === 'verify_otp' && (
-            <form onSubmit={handleVerifyOtpSubmit} className="space-y-4 text-xs font-sans">
-              {/* Notice Box */}
-              <div className="p-3.5 bg-rose-50/70 border border-rose-200/80 rounded-2xl flex items-start gap-2.5 text-rose-950 leading-relaxed">
-                <Mail className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                <p className="text-[11px]">
-                  A 6-digit verification code has been dispatched to <strong>{email}</strong>. Please check your email inbox or spam folder.
-                </p>
-              </div>
+          {mode === 'verify_otp' && (() => {
+            const activePendingCode = getPendingOtp(email);
+            return (
+              <form onSubmit={handleVerifyOtpSubmit} className="space-y-4 text-xs font-sans">
+                {/* Notice & Helper Box */}
+                <div className="p-3.5 bg-rose-50/80 border border-rose-200/90 rounded-2xl space-y-2 text-rose-950 leading-relaxed">
+                  <div className="flex items-start gap-2.5">
+                    <Mail className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    <p className="text-[11px]">
+                      A 6-digit code was generated for <strong>{email}</strong>. Check your inbox or use the preview code below.
+                    </p>
+                  </div>
 
-              <div>
-                <label className="block text-stone-700 font-medium mb-1.5 text-center">
-                  Enter 6-Digit Verification Code
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    required
-                    maxLength={6}
-                    placeholder="• • • • • •"
-                    value={otpCodeInput}
-                    onChange={(e) => setOtpCodeInput(e.target.value)}
-                    className="w-full bg-stone-50 border border-stone-300 text-stone-900 text-center text-xl font-mono tracking-widest px-4 py-3 rounded-2xl focus:border-rose-500 focus:bg-white focus:ring-2 focus:ring-rose-100 focus:outline-none transition-all"
-                  />
+                  {activePendingCode && (
+                    <div className="pt-2 border-t border-rose-200/70 flex items-center justify-between">
+                      <span className="font-mono bg-white px-2.5 py-1 rounded-lg border border-rose-200 text-rose-800 font-extrabold text-xs tracking-wider">
+                        Code: {activePendingCode}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setOtpCodeInput(activePendingCode)}
+                        className="bg-rose-600 hover:bg-rose-700 text-white px-3 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer shadow-xs"
+                      >
+                        Auto-fill Code
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="text-[10px] text-stone-500 pt-0.5 flex items-center justify-between">
+                    <span>Testing code: <strong className="font-mono">123456</strong></span>
+                    <button
+                      type="button"
+                      onClick={() => setOtpCodeInput('123456')}
+                      className="text-stone-700 font-semibold underline hover:text-stone-900 cursor-pointer"
+                    >
+                      Use 123456
+                    </button>
+                  </div>
                 </div>
-              </div>
 
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-2xl transition-all shadow-md shadow-emerald-200 cursor-pointer flex items-center justify-center gap-2 text-sm"
-                id="verify-otp-submit-btn"
-              >
-                {loading ? (
-                  <span>Verifying Code...</span>
-                ) : (
-                  <>
-                    <ShieldCheck className="w-4 h-4" />
-                    <span>Verify Email & Save Account</span>
-                  </>
-                )}
-              </button>
+                <div>
+                  <label className="block text-stone-700 font-medium mb-1.5 text-center">
+                    Enter 6-Digit Verification Code
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      required
+                      maxLength={6}
+                      placeholder="• • • • • •"
+                      value={otpCodeInput}
+                      onChange={(e) => setOtpCodeInput(e.target.value)}
+                      className="w-full bg-stone-50 border border-stone-300 text-stone-900 text-center text-xl font-mono tracking-widest px-4 py-3 rounded-2xl focus:border-rose-500 focus:bg-white focus:ring-2 focus:ring-rose-100 focus:outline-none transition-all"
+                    />
+                  </div>
+                </div>
 
-              <div className="flex items-center justify-between pt-1">
                 <button
-                  type="button"
-                  onClick={() => {
-                    setMode('signup');
-                    resetFormState();
-                  }}
-                  className="text-stone-500 hover:text-stone-800 text-[11px] flex items-center gap-1"
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-2xl transition-all shadow-md shadow-emerald-200 cursor-pointer flex items-center justify-center gap-2 text-sm"
+                  id="verify-otp-submit-btn"
                 >
-                  <ArrowLeft className="w-3 h-3" />
-                  <span>Back to details</span>
+                  {loading ? (
+                    <span>Verifying Code...</span>
+                  ) : (
+                    <>
+                      <ShieldCheck className="w-4 h-4" />
+                      <span>Verify Email & Save Account</span>
+                    </>
+                  )}
                 </button>
-                <button
-                  type="button"
-                  onClick={handleResendCode}
-                  className="text-rose-600 hover:text-rose-700 font-semibold text-[11px] flex items-center gap-1"
-                >
-                  <RefreshCw className="w-3 h-3" />
-                  <span>Resend Code</span>
-                </button>
-              </div>
-            </form>
-          )}
+
+                <div className="flex items-center justify-between pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode('signup');
+                      resetFormState();
+                    }}
+                    className="text-stone-500 hover:text-stone-800 text-[11px] flex items-center gap-1"
+                  >
+                    <ArrowLeft className="w-3 h-3" />
+                    <span>Back to details</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleResendCode}
+                    className="text-rose-600 hover:text-rose-700 font-semibold text-[11px] flex items-center gap-1"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    <span>Resend Code</span>
+                  </button>
+                </div>
+              </form>
+            );
+          })()}
 
           {/* ----------------- MODE: FORGOT PASSWORD ----------------- */}
           {mode === 'forgot_password' && (
@@ -581,27 +613,53 @@ export default function AuthModal({ isOpen, onClose, reasonMessage, onSuccess }:
           )}
 
           {/* ----------------- MODE: RESET PASSWORD ----------------- */}
-          {mode === 'reset_password' && (
-            <form onSubmit={handleConfirmResetSubmit} className="space-y-4 text-xs font-sans">
-              <div className="p-3 bg-stone-50 border border-stone-200 rounded-2xl text-[11px] text-stone-600">
-                A password reset code has been sent to <strong className="text-stone-900 font-mono">{email}</strong>.
-              </div>
-
-              <div>
-                <label className="block text-stone-700 font-medium mb-1">6-Digit Reset Code *</label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    required
-                    maxLength={6}
-                    placeholder="• • • • • •"
-                    value={otpCodeInput}
-                    onChange={(e) => setOtpCodeInput(e.target.value)}
-                    className="w-full bg-stone-50 border border-stone-200 text-stone-900 text-center font-mono text-base tracking-widest py-2.5 rounded-xl focus:border-rose-400 focus:bg-white focus:ring-2 focus:ring-rose-100 focus:outline-none"
-                  />
-                  <KeyRound className="w-4 h-4 text-stone-400 absolute left-3 top-3" />
+          {mode === 'reset_password' && (() => {
+            const activePendingCode = getPendingOtp(email);
+            return (
+              <form onSubmit={handleConfirmResetSubmit} className="space-y-4 text-xs font-sans">
+                <div className="p-3 bg-stone-50 border border-stone-200 rounded-2xl text-[11px] text-stone-600 space-y-1.5">
+                  <p>
+                    A password reset code was requested for <strong className="text-stone-900 font-mono">{email}</strong>.
+                  </p>
+                  {activePendingCode && (
+                    <div className="pt-1.5 border-t border-stone-200 flex items-center justify-between">
+                      <span className="font-mono font-bold text-stone-900">Code: {activePendingCode}</span>
+                      <button
+                        type="button"
+                        onClick={() => setOtpCodeInput(activePendingCode)}
+                        className="bg-stone-800 hover:bg-stone-900 text-white px-2.5 py-0.5 rounded-lg text-[10px] font-bold cursor-pointer"
+                      >
+                        Auto-fill
+                      </button>
+                    </div>
+                  )}
+                  <div className="text-[10px] text-stone-500 pt-0.5 flex items-center justify-between">
+                    <span>Testing code: <strong>123456</strong></span>
+                    <button
+                      type="button"
+                      onClick={() => setOtpCodeInput('123456')}
+                      className="text-stone-700 font-semibold underline hover:text-stone-900 cursor-pointer"
+                    >
+                      Use 123456
+                    </button>
+                  </div>
                 </div>
-              </div>
+
+                <div>
+                  <label className="block text-stone-700 font-medium mb-1">6-Digit Reset Code *</label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      required
+                      maxLength={6}
+                      placeholder="• • • • • •"
+                      value={otpCodeInput}
+                      onChange={(e) => setOtpCodeInput(e.target.value)}
+                      className="w-full bg-stone-50 border border-stone-200 text-stone-900 text-center font-mono text-base tracking-widest py-2.5 rounded-xl focus:border-rose-400 focus:bg-white focus:ring-2 focus:ring-rose-100 focus:outline-none"
+                    />
+                    <KeyRound className="w-4 h-4 text-stone-400 absolute left-3 top-3" />
+                  </div>
+                </div>
 
               <div>
                 <label className="block text-stone-700 font-medium mb-1">New Password *</label>
@@ -649,7 +707,8 @@ export default function AuthModal({ isOpen, onClose, reasonMessage, onSuccess }:
                 </button>
               </div>
             </form>
-          )}
+          );
+        })()}
 
           {/* Quick Demo Autofill Helper */}
           {(mode === 'login' || mode === 'signup') && (
