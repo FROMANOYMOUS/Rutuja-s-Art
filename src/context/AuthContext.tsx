@@ -35,8 +35,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
 
   const [loading, setLoading] = useState(false);
-  // Store generated OTP codes per email: { "email@domain.com": { code: "123456", userData: {...} } }
-  const [pendingOtps, setPendingOtps] = useState<Record<string, { code: string; userData?: any }>>({});
+  // Store generated OTP codes per email: { "email@domain.com": { code: "123456", validCodes: ["123456"], userData: {...}, createdAt: 123456789 } }
+  const [pendingOtps, setPendingOtps] = useState<Record<string, { code: string; validCodes?: string[]; userData?: any; createdAt?: number }>>({});
 
   // Sync user state to localStorage
   useEffect(() => {
@@ -87,7 +87,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     setPendingOtps((prev) => ({
       ...prev,
-      [cleanEmail]: { code, userData }
+      [cleanEmail]: {
+        code,
+        validCodes: [code],
+        userData,
+        createdAt: Date.now()
+      }
     }));
 
     // Trigger Gmail API call to send actual verification email
@@ -114,11 +119,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLoading(true);
     const cleanEmail = email.trim().toLowerCase();
     const pending = pendingOtps[cleanEmail];
+    const userCode = code.trim();
+
+    const isValid = pending && (
+      pending.code === userCode ||
+      (Array.isArray(pending.validCodes) && pending.validCodes.includes(userCode))
+    );
 
     // Check code match
-    if (!pending || pending.code !== code.trim()) {
+    if (!pending || !isValid) {
       setLoading(false);
-      return { success: false, error: 'Invalid verification code. Please check your email.' };
+      return { success: false, error: 'Invalid verification code. Please check your email inbox.' };
     }
 
     const userData = pending.userData || {};
@@ -185,13 +196,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Resend OTP
   const resendOtp = async (email: string) => {
     const cleanEmail = email.trim().toLowerCase();
-    const newCode = generateCode();
-    const pending = pendingOtps[cleanEmail];
-    const name = pending?.userData?.name || cleanEmail.split('@')[0];
+    const existing = pendingOtps[cleanEmail];
+    const name = existing?.userData?.name || cleanEmail.split('@')[0];
+
+    // Reuse existing code if created less than 90 seconds ago, or generate a fresh one
+    let codeToSend = generateCode();
+    let updatedValidCodes = [codeToSend];
+
+    if (existing) {
+      if (existing.createdAt && (Date.now() - existing.createdAt < 90000) && existing.code) {
+        codeToSend = existing.code;
+        updatedValidCodes = Array.from(new Set([codeToSend, ...(existing.validCodes || [])]));
+      } else {
+        updatedValidCodes = Array.from(new Set([codeToSend, ...(existing.validCodes || [existing.code])]));
+      }
+    }
 
     setPendingOtps((prev) => ({
       ...prev,
-      [cleanEmail]: { ...(prev[cleanEmail] || {}), code: newCode }
+      [cleanEmail]: {
+        ...(prev[cleanEmail] || {}),
+        code: codeToSend,
+        validCodes: updatedValidCodes,
+        createdAt: Date.now()
+      }
     }));
 
     try {
@@ -201,7 +229,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         body: JSON.stringify({
           recipientEmail: cleanEmail,
           recipientName: name,
-          otpCode: newCode
+          otpCode: codeToSend
         })
       });
     } catch (e) {
@@ -219,7 +247,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     setPendingOtps((prev) => ({
       ...prev,
-      [cleanEmail]: { code, isReset: true }
+      [cleanEmail]: {
+        code,
+        validCodes: [code],
+        createdAt: Date.now()
+      }
     }));
 
     try {
@@ -245,8 +277,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLoading(true);
     const cleanEmail = email.trim().toLowerCase();
     const pending = pendingOtps[cleanEmail];
+    const userCode = code.trim();
 
-    if (!pending || pending.code !== code.trim()) {
+    const isValid = pending && (
+      pending.code === userCode ||
+      (Array.isArray(pending.validCodes) && pending.validCodes.includes(userCode))
+    );
+
+    if (!pending || !isValid) {
       setLoading(false);
       return { success: false, error: 'Invalid verification code. Please check your email.' };
     }

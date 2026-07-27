@@ -9,8 +9,14 @@ import { eq, asc } from 'drizzle-orm';
 import { google } from 'googleapis';
 import nodemailer from 'nodemailer';
 
-// Helper: Initialize Nodemailer Transporter
+// Helper: Initialize Nodemailer Transporter with caching and connection pooling
+let activeTransporterObj: { transporter: nodemailer.Transporter; sender: string; provider: string } | null = null;
+
 async function createNodemailerTransporter() {
+  if (activeTransporterObj) {
+    return activeTransporterObj;
+  }
+
   const gmailUser = (process.env.GMAIL_USER || process.env.SMTP_USER || process.env.EMAIL_USER || '').trim();
   const gmailPass = (process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || process.env.EMAIL_PASS || '').replaceAll(' ', '').trim();
   const smtpHost = (process.env.SMTP_HOST || '').trim();
@@ -25,13 +31,17 @@ async function createNodemailerTransporter() {
   if (gmailUser && gmailPass) {
     const transporter = nodemailer.createTransport({
       service: process.env.SMTP_SERVICE || 'gmail',
+      pool: true,
+      maxConnections: 5,
+      maxMessages: 100,
       auth: {
         user: gmailUser,
         pass: gmailPass
       }
     });
     const sender = process.env.EMAIL_FROM || `"Rutuja's Art Collection" <${gmailUser}>`;
-    return { transporter, sender, provider: 'Nodemailer SMTP / Gmail App Password' };
+    activeTransporterObj = { transporter, sender, provider: 'Nodemailer SMTP / Gmail App Password' };
+    return activeTransporterObj;
   }
 
   // 2. Custom SMTP Host
@@ -40,10 +50,12 @@ async function createNodemailerTransporter() {
       host: smtpHost,
       port: smtpPort,
       secure: smtpSecure,
+      pool: true,
       auth: (gmailUser && gmailPass) ? { user: gmailUser, pass: gmailPass } : undefined
     });
     const sender = process.env.EMAIL_FROM || `"Rutuja's Art Collection" <${gmailUser || 'noreply@rutuja-art.com'}>`;
-    return { transporter, sender, provider: `Nodemailer SMTP (${smtpHost}:${smtpPort})` };
+    activeTransporterObj = { transporter, sender, provider: `Nodemailer SMTP (${smtpHost}:${smtpPort})` };
+    return activeTransporterObj;
   }
 
   // 3. Gmail OAuth2
@@ -60,7 +72,8 @@ async function createNodemailerTransporter() {
       }
     });
     const sender = process.env.EMAIL_FROM || `"Rutuja's Art Collection" <${senderEmail}>`;
-    return { transporter, sender, provider: 'Nodemailer Gmail OAuth2' };
+    activeTransporterObj = { transporter, sender, provider: 'Nodemailer Gmail OAuth2' };
+    return activeTransporterObj;
   }
 
   // 4. Fallback: Ethereal Test Account
@@ -76,7 +89,8 @@ async function createNodemailerTransporter() {
       }
     });
     const sender = `"Rutuja's Art Collection (Test)" <${testAccount.user}>`;
-    return { transporter, sender, provider: 'Nodemailer Ethereal Sandbox' };
+    activeTransporterObj = { transporter, sender, provider: 'Nodemailer Ethereal Sandbox' };
+    return activeTransporterObj;
   } catch (err) {
     console.warn('Could not initialize Nodemailer test account:', err);
     return null;
