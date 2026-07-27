@@ -58,21 +58,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const cleanEmail = email.trim().toLowerCase();
     const code = generateCode();
 
-    // 1. Supabase Auth signup trigger if configured
-    if (isSupabaseConfigured && supabase) {
-      try {
-        await supabase.auth.signUp({
-          email: cleanEmail,
-          password: pass,
-          options: {
-            data: { name, phone, address, verified: false }
-          }
-        });
-      } catch (err) {
-        console.warn('Supabase signup notice:', err);
-      }
-    }
-
     // Save pending verification payload
     const userData = {
       id: `usr_${Math.floor(100000 + Math.random() * 900000)}`,
@@ -300,15 +285,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.warn('API reset password error:', e);
     }
 
-    // 2. Update password in Supabase if configured
-    if (isSupabaseConfigured && supabase) {
-      try {
-        await supabase.auth.updateUser({ password: newPassword });
-      } catch (sbE) {
-        console.warn('Supabase password reset notice:', sbE);
-      }
-    }
-
     // 3. Update password in Local Storage registry
     try {
       const registered = JSON.parse(localStorage.getItem('rutujas_registered_users') || '[]');
@@ -339,34 +315,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLoading(true);
     const cleanEmail = email.trim().toLowerCase();
 
-    // 1. Try Supabase Auth first
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const { data: sbAuth } = await supabase.auth.signInWithPassword({
-          email: cleanEmail,
-          password: pass
-        });
-
-        if (sbAuth?.user) {
-          const userObj: User = {
-            id: sbAuth.user.id,
-            email: sbAuth.user.email || cleanEmail,
-            name: sbAuth.user.user_metadata?.name || cleanEmail.split('@')[0],
-            phone: sbAuth.user.user_metadata?.phone || '',
-            address: sbAuth.user.user_metadata?.address || '',
-            verified: true
-          };
-          setUser(userObj);
-          saveCustomerProfileToSupabase(userObj);
-          setLoading(false);
-          return { success: true };
-        }
-      } catch (sbE) {
-        console.warn('Supabase login catch:', sbE);
-      }
-    }
-
-    // 2. Try Backend API login
+    // 1. Try Backend API login
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
