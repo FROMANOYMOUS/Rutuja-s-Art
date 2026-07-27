@@ -1,10 +1,87 @@
 import express from 'express';
 import path from 'path';
+import dotenv from 'dotenv';
+dotenv.config();
 import { createServer as createViteServer } from 'vite';
 import { db } from './src/db/index.ts';
 import { orders, orderItems, orderMilestones, users } from './src/db/schema.ts';
 import { eq, asc } from 'drizzle-orm';
 import { google } from 'googleapis';
+import nodemailer from 'nodemailer';
+
+// Helper: Initialize Nodemailer Transporter
+async function createNodemailerTransporter() {
+  const gmailUser = process.env.GMAIL_USER || process.env.SMTP_USER || process.env.EMAIL_USER;
+  const gmailPass = process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || process.env.EMAIL_PASS;
+  const smtpHost = process.env.SMTP_HOST;
+  const smtpPort = Number(process.env.SMTP_PORT || 587);
+  const smtpSecure = process.env.SMTP_SECURE === 'true' || smtpPort === 465;
+
+  const clientId = process.env.GMAIL_CLIENT_ID;
+  const clientSecret = process.env.GMAIL_CLIENT_SECRET;
+  const refreshToken = process.env.GMAIL_REFRESH_TOKEN;
+
+  // 1. Direct SMTP or Gmail App Password
+  if (gmailUser && gmailPass) {
+    const transporter = nodemailer.createTransport({
+      service: process.env.SMTP_SERVICE || 'gmail',
+      auth: {
+        user: gmailUser,
+        pass: gmailPass
+      }
+    });
+    const sender = process.env.EMAIL_FROM || `"Rutuja's Art Collection" <${gmailUser}>`;
+    return { transporter, sender, provider: 'Nodemailer SMTP / Gmail App Password' };
+  }
+
+  // 2. Custom SMTP Host
+  if (smtpHost) {
+    const transporter = nodemailer.createTransport({
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpSecure,
+      auth: (gmailUser && gmailPass) ? { user: gmailUser, pass: gmailPass } : undefined
+    });
+    const sender = process.env.EMAIL_FROM || `"Rutuja's Art Collection" <${gmailUser || 'noreply@rutuja-art.com'}>`;
+    return { transporter, sender, provider: `Nodemailer SMTP (${smtpHost}:${smtpPort})` };
+  }
+
+  // 3. Gmail OAuth2
+  if (clientId && clientSecret && refreshToken) {
+    const senderEmail = gmailUser || 'vartakpadekar@gmail.com';
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        type: 'OAuth2',
+        user: senderEmail,
+        clientId,
+        clientSecret,
+        refreshToken
+      }
+    });
+    const sender = process.env.EMAIL_FROM || `"Rutuja's Art Collection" <${senderEmail}>`;
+    return { transporter, sender, provider: 'Nodemailer Gmail OAuth2' };
+  }
+
+  // 4. Fallback: Ethereal Test Account
+  try {
+    const testAccount = await nodemailer.createTestAccount();
+    const transporter = nodemailer.createTransport({
+      host: testAccount.smtp.host,
+      port: testAccount.smtp.port,
+      secure: testAccount.smtp.secure,
+      auth: {
+        user: testAccount.user,
+        pass: testAccount.pass
+      }
+    });
+    const sender = `"Rutuja's Art Collection (Test)" <${testAccount.user}>`;
+    return { transporter, sender, provider: 'Nodemailer Ethereal Sandbox' };
+  } catch (err) {
+    console.warn('Could not initialize Nodemailer test account:', err);
+    return null;
+  }
+}
 
 function makeRawEmail(to: string, subject: string, htmlMessage: string) {
   const str = [
@@ -43,6 +120,7 @@ async function startServer() {
     status: 'DELIVERED' | 'FAILED';
     messageId?: string;
     errorDetails?: string;
+    provider?: string;
   }> = [];
 
   // API Endpoint: Check recent backend email logs
@@ -50,7 +128,7 @@ async function startServer() {
     res.json({ logs: emailDispatchLogs.slice(0, 50) });
   });
 
-  // Auth: Send Gmail Verification Email
+  // Auth: Send Verification Email using Nodemailer
   app.post('/api/auth/send-verification-email', async (req, res) => {
     try {
       const { recipientEmail, recipientName, otpCode } = req.body;
@@ -79,75 +157,11 @@ async function startServer() {
         </div>
       `;
 
-      try {
-        let authClient: any;
-        const clientId = process.env.GMAIL_CLIENT_ID;
-        const clientSecret = process.env.GMAIL_CLIENT_SECRET;
-        const refreshToken = process.env.GMAIL_REFRESH_TOKEN;
-        const saJson = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
+      const transporterObj = await createNodemailerTransporter();
 
-        if (clientId && clientSecret && refreshToken) {
-          const oauth2Client = new google.auth.OAuth2(
-            clientId,
-            clientSecret,
-            process.env.GMAIL_REDIRECT_URI || 'https://developers.google.com/oauthplayground'
-          );
-          oauth2Client.setCredentials({ refresh_token: refreshToken });
-          authClient = oauth2Client;
-        } else if (saJson) {
-          try {
-            const credentials = JSON.parse(
-              saJson.startsWith('{') ? saJson : Buffer.from(saJson, 'base64').toString('utf-8')
-            );
-            authClient = new google.auth.GoogleAuth({
-              credentials,
-              scopes: ['https://www.googleapis.com/auth/gmail.send']
-            });
-          } catch (e) {
-            console.warn('Failed to parse GOOGLE_APPLICATION_CREDENTIALS_JSON, falling back to GoogleAuth ADC');
-            authClient = new google.auth.GoogleAuth({
-              scopes: ['https://www.googleapis.com/auth/gmail.send']
-            });
-          }
-        } else {
-          authClient = new google.auth.GoogleAuth({
-            scopes: ['https://www.googleapis.com/auth/gmail.send']
-          });
-        }
-
-        const gmail = google.gmail({ version: 'v1', auth: authClient });
-
-        const rawMessage = makeRawEmail(
-          cleanEmail,
-          `🌸 ${otpCode} is your Rutuja's Art Verification Code`,
-          htmlBody
-        );
-
-        const response = await gmail.users.messages.send({
-          userId: 'me',
-          requestBody: { raw: rawMessage }
-        });
-
-        console.log(`[EMAIL DISPATCH SUCCESS] OTP email delivered to ${cleanEmail}. Message ID: ${response.data.id}`);
-
-        emailDispatchLogs.unshift({
-          id: `log_${Date.now()}`,
-          timestamp: new Date().toISOString(),
-          email: cleanEmail,
-          status: 'DELIVERED',
-          messageId: response.data.id
-        });
-
-        return res.json({
-          success: true,
-          emailSent: true,
-          messageId: response.data.id,
-          recipientEmail: cleanEmail
-        });
-      } catch (gmailErr: any) {
-        const errMsg = gmailErr?.message || String(gmailErr);
-        console.warn(`[EMAIL DISPATCH FAILURE] Could not send OTP email to ${cleanEmail}. Reason:`, errMsg);
-
+      if (!transporterObj) {
+        const errMsg = 'No SMTP credentials or App Password configured.';
+        console.warn(`[NODEMAILER NOTICE] ${errMsg}`);
         emailDispatchLogs.unshift({
           id: `log_${Date.now()}`,
           timestamp: new Date().toISOString(),
@@ -155,18 +169,69 @@ async function startServer() {
           status: 'FAILED',
           errorDetails: errMsg
         });
-
         return res.json({
           success: true,
           emailSent: false,
           recipientEmail: cleanEmail,
-          errorDetails: errMsg,
-          notice: 'Gmail API not authenticated or credentials missing.'
+          notice: 'Please add GMAIL_USER and GMAIL_APP_PASSWORD to environment variables to send live emails.'
         });
       }
+
+      const { transporter, sender, provider } = transporterObj;
+
+      const mailOptions = {
+        from: sender,
+        to: cleanEmail,
+        subject: `🌸 ${otpCode} is your Verification Code - Rutuja's Art Collection`,
+        text: `Hello ${cleanName},\n\nYour verification code is: ${otpCode}\n\nPlease enter this code to verify your account.`,
+        html: htmlBody
+      };
+
+      const info = await transporter.sendMail(mailOptions);
+      const testPreviewUrl = nodemailer.getTestMessageUrl(info);
+
+      console.log(`[NODEMAILER SUCCESS] Email sent via ${provider} to ${cleanEmail}. Message ID: ${info.messageId}`);
+      if (testPreviewUrl) {
+        console.log(`[NODEMAILER PREVIEW] Test email view URL: ${testPreviewUrl}`);
+      }
+
+      emailDispatchLogs.unshift({
+        id: `log_${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        email: cleanEmail,
+        status: 'DELIVERED',
+        messageId: info.messageId,
+        provider,
+        errorDetails: testPreviewUrl ? `Preview URL: ${testPreviewUrl}` : undefined
+      });
+
+      return res.json({
+        success: true,
+        emailSent: true,
+        provider,
+        messageId: info.messageId,
+        recipientEmail: cleanEmail,
+        testPreviewUrl: testPreviewUrl || undefined
+      });
+
     } catch (err: any) {
-      console.error('Send verification email handler error:', err);
-      return res.status(500).json({ error: 'Failed to process verification email dispatch' });
+      const errMsg = err?.message || String(err);
+      console.error(`[NODEMAILER DISPATCH ERROR] Failed to send email to ${req.body?.recipientEmail}:`, errMsg);
+
+      emailDispatchLogs.unshift({
+        id: `log_${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        email: req.body?.recipientEmail || 'unknown',
+        status: 'FAILED',
+        errorDetails: errMsg
+      });
+
+      return res.json({
+        success: true,
+        emailSent: false,
+        recipientEmail: req.body?.recipientEmail,
+        errorDetails: errMsg
+      });
     }
   });
 
