@@ -11,15 +11,15 @@ import nodemailer from 'nodemailer';
 
 // Helper: Initialize Nodemailer Transporter
 async function createNodemailerTransporter() {
-  const gmailUser = process.env.GMAIL_USER || process.env.SMTP_USER || process.env.EMAIL_USER;
-  const gmailPass = process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || process.env.EMAIL_PASS;
-  const smtpHost = process.env.SMTP_HOST;
+  const gmailUser = (process.env.GMAIL_USER || process.env.SMTP_USER || process.env.EMAIL_USER || '').trim();
+  const gmailPass = (process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || process.env.EMAIL_PASS || '').replaceAll(' ', '').trim();
+  const smtpHost = (process.env.SMTP_HOST || '').trim();
   const smtpPort = Number(process.env.SMTP_PORT || 587);
   const smtpSecure = process.env.SMTP_SECURE === 'true' || smtpPort === 465;
 
-  const clientId = process.env.GMAIL_CLIENT_ID;
-  const clientSecret = process.env.GMAIL_CLIENT_SECRET;
-  const refreshToken = process.env.GMAIL_REFRESH_TOKEN;
+  const clientId = (process.env.GMAIL_CLIENT_ID || '').trim();
+  const clientSecret = (process.env.GMAIL_CLIENT_SECRET || '').trim();
+  const refreshToken = (process.env.GMAIL_REFRESH_TOKEN || '').trim();
 
   // 1. Direct SMTP or Gmail App Password
   if (gmailUser && gmailPass) {
