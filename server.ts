@@ -19,38 +19,36 @@ async function createNodemailerTransporter() {
 
   const gmailUser = (process.env.GMAIL_USER || process.env.SMTP_USER || process.env.EMAIL_USER || '').trim();
   const gmailPass = (process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || process.env.EMAIL_PASS || '').replaceAll(' ', '').trim();
-  const smtpHost = (process.env.SMTP_HOST || '').trim();
-  const smtpPort = Number(process.env.SMTP_PORT || 587);
-  const smtpSecure = process.env.SMTP_SECURE === 'true' || smtpPort === 465;
 
-  const clientId = (process.env.GMAIL_CLIENT_ID || '').trim();
-  const clientSecret = (process.env.GMAIL_CLIENT_SECRET || '').trim();
-  const refreshToken = (process.env.GMAIL_REFRESH_TOKEN || '').trim();
-
-  // 1. Direct SMTP or Gmail App Password
+  // 1. Strictly use Gmail App Password via Direct SSL (smtp.gmail.com:465)
   if (gmailUser && gmailPass) {
     const transporter = nodemailer.createTransport({
-      service: process.env.SMTP_SERVICE || 'gmail',
-      pool: true,
-      maxConnections: 5,
-      maxMessages: 100,
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true, // SSL for Gmail
       auth: {
         user: gmailUser,
         pass: gmailPass
+      },
+      tls: {
+        rejectUnauthorized: false
       }
     });
     const sender = process.env.EMAIL_FROM || `"Rutuja's Art Collection" <${gmailUser}>`;
-    activeTransporterObj = { transporter, sender, provider: 'Nodemailer SMTP / Gmail App Password' };
+    activeTransporterObj = { transporter, sender, provider: 'Gmail App Password (smtp.gmail.com:465)' };
     return activeTransporterObj;
   }
 
   // 2. Custom SMTP Host
+  const smtpHost = (process.env.SMTP_HOST || '').trim();
+  const smtpPort = Number(process.env.SMTP_PORT || 587);
+  const smtpSecure = process.env.SMTP_SECURE === 'true' || smtpPort === 465;
+
   if (smtpHost) {
     const transporter = nodemailer.createTransport({
       host: smtpHost,
       port: smtpPort,
       secure: smtpSecure,
-      pool: true,
       auth: (gmailUser && gmailPass) ? { user: gmailUser, pass: gmailPass } : undefined
     });
     const sender = process.env.EMAIL_FROM || `"Rutuja's Art Collection" <${gmailUser || 'noreply@rutuja-art.com'}>`;
@@ -58,25 +56,7 @@ async function createNodemailerTransporter() {
     return activeTransporterObj;
   }
 
-  // 3. Gmail OAuth2
-  if (clientId && clientSecret && refreshToken) {
-    const senderEmail = gmailUser || 'vartakpadekar@gmail.com';
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        type: 'OAuth2',
-        user: senderEmail,
-        clientId,
-        clientSecret,
-        refreshToken
-      }
-    });
-    const sender = process.env.EMAIL_FROM || `"Rutuja's Art Collection" <${senderEmail}>`;
-    activeTransporterObj = { transporter, sender, provider: 'Nodemailer Gmail OAuth2' };
-    return activeTransporterObj;
-  }
-
-  // 4. Fallback: Ethereal Test Account
+  // 3. Fallback: Ethereal Sandbox
   try {
     const testAccount = await nodemailer.createTestAccount();
     const transporter = nodemailer.createTransport({
@@ -183,11 +163,11 @@ async function startServer() {
           status: 'FAILED',
           errorDetails: errMsg
         });
-        return res.json({
-          success: true,
+        return res.status(400).json({
+          success: false,
           emailSent: false,
           recipientEmail: cleanEmail,
-          notice: 'Please add GMAIL_USER and GMAIL_APP_PASSWORD to environment variables to send live emails.'
+          error: 'Gmail App Password credentials are missing. Please check server configuration.'
         });
       }
 
@@ -196,6 +176,7 @@ async function startServer() {
       const mailOptions = {
         from: sender,
         to: cleanEmail,
+        replyTo: sender,
         subject: `🌸 ${otpCode} is your Verification Code - Rutuja's Art Collection`,
         text: `Hello ${cleanName},\n\nYour verification code is: ${otpCode}\n\nPlease enter this code to verify your account.`,
         html: htmlBody
@@ -204,7 +185,7 @@ async function startServer() {
       const info = await transporter.sendMail(mailOptions);
       const testPreviewUrl = nodemailer.getTestMessageUrl(info);
 
-      console.log(`[NODEMAILER SUCCESS] Email sent via ${provider} to ${cleanEmail}. Message ID: ${info.messageId}`);
+      console.log(`[NODEMAILER SUCCESS] Verification email sent via ${provider} to ${cleanEmail}. Message ID: ${info.messageId}`);
       if (testPreviewUrl) {
         console.log(`[NODEMAILER PREVIEW] Test email view URL: ${testPreviewUrl}`);
       }
@@ -232,6 +213,9 @@ async function startServer() {
       const errMsg = err?.message || String(err);
       console.error(`[NODEMAILER DISPATCH ERROR] Failed to send email to ${req.body?.recipientEmail}:`, errMsg);
 
+      // Invalidate cached transporter on error so subsequent requests re-initialize
+      activeTransporterObj = null;
+
       emailDispatchLogs.unshift({
         id: `log_${Date.now()}`,
         timestamp: new Date().toISOString(),
@@ -240,11 +224,11 @@ async function startServer() {
         errorDetails: errMsg
       });
 
-      return res.json({
-        success: true,
+      return res.status(500).json({
+        success: false,
         emailSent: false,
         recipientEmail: req.body?.recipientEmail,
-        errorDetails: errMsg
+        error: errMsg
       });
     }
   });

@@ -82,7 +82,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Trigger Gmail API call to send actual verification email
     try {
-      await fetch('/api/auth/send-verification-email', {
+      const emailRes = await fetch('/api/auth/send-verification-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -91,8 +91,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           otpCode: code
         })
       });
+      const emailData = await emailRes.json();
+      if (!emailRes.ok || !emailData.success || emailData.emailSent === false) {
+        console.warn('Verification email send warning:', emailData);
+        setLoading(false);
+        return {
+          success: false,
+          error: emailData?.error || 'Failed to send verification code email to ' + cleanEmail
+        };
+      }
     } catch (emailErr) {
-      console.warn('Backend email dispatch notice:', emailErr);
+      console.warn('Backend email dispatch error:', emailErr);
+      setLoading(false);
+      return { success: false, error: 'Failed to send verification code. Please check your internet connection.' };
     }
 
     setLoading(false);
@@ -208,7 +219,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }));
 
     try {
-      await fetch('/api/auth/send-verification-email', {
+      const emailRes = await fetch('/api/auth/send-verification-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -217,8 +228,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           otpCode: codeToSend
         })
       });
+      const emailData = await emailRes.json();
+      if (!emailRes.ok || !emailData.success || emailData.emailSent === false) {
+        return { success: false, error: emailData?.error || 'Could not resend verification email.' };
+      }
     } catch (e) {
       console.warn('Resend email notice:', e);
+      return { success: false, error: 'Network error resending code.' };
     }
 
     return { success: true };
@@ -240,7 +256,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }));
 
     try {
-      await fetch('/api/auth/send-verification-email', {
+      const emailRes = await fetch('/api/auth/send-verification-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -249,8 +265,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           otpCode: code
         })
       });
+      const emailData = await emailRes.json();
+      if (!emailRes.ok || !emailData.success || emailData.emailSent === false) {
+        setLoading(false);
+        return { success: false, error: emailData?.error || 'Failed to send password reset email.' };
+      }
     } catch (e) {
       console.warn('Password reset email dispatch notice:', e);
+      setLoading(false);
+      return { success: false, error: 'Network error sending password reset email.' };
     }
 
     setLoading(false);
